@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#0c2614" />
+    <meta
+      name="description"
+      content="Kickabout — fast top-down football you can play online with a friend, right in the browser."
+    />
+    <title>Kickabout</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Russo+One&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <canvas id="pitch" aria-label="Football pitch"></canvas>
+    <div id="backdrop"></div>
+
+    <!-- Main menu -->
+    <section id="screen-menu" class="screen" hidden>
+      <div class="card menu-card">
+        <header class="brand">
+          <h1>Kick<span>about</span></h1>
+          <p>Fast top-down football for you and your friends.</p>
+        </header>
+
+        <label class="field">
+          <span>Your name</span>
+          <input id="name" maxlength="16" autocomplete="nickname" placeholder="Your name" />
+        </label>
+
+        <div id="invite-banner" class="invite" hidden>
+          You've been invited to room <strong id="invite-code"></strong>.
+          <button id="btn-accept-invite" class="primary">Join the game</button>
+        </div>
+
+        <div class="group">
+          <h2>Play online</h2>
+          <p class="hint">Create a room and send the link to a friend. Works across the internet, no sign-up.</p>
+          <div class="row">
+            <button id="btn-create" class="primary">Create a room</button>
+          </div>
+          <form id="join-form" class="row">
+            <input id="join-code" maxlength="12" placeholder="Room code" autocomplete="off" spellcheck="false" />
+            <button type="submit">Join</button>
+          </form>
+        </div>
+
+        <div class="group">
+          <h2>On this device</h2>
+          <div class="row">
+            <button id="btn-local">2 players, 1 keyboard</button>
+            <input id="p2-name" class="small-input" maxlength="16" placeholder="Player 2 name" />
+          </div>
+          <div class="row">
+            <button id="btn-practice">Practice vs CPU</button>
+            <select id="practice-level" aria-label="CPU difficulty">
+              <option value="easy">Easy</option>
+              <option value="normal" selected>Normal</option>
+              <option value="hard">Hard</option>
+            </select>
+          </div>
+          <div class="row settings-row">
+            <label
+              >Length
+              <select id="menu-time" class="setting-time"></select>
+            </label>
+            <label
+              >Win at
+              <select id="menu-score" class="setting-score"></select>
+            </label>
+          </div>
+        </div>
+
+        <details class="controls">
+          <summary>How to play</summary>
+          <p>
+            Get the ball in your opponent's net. Hold <b>kick</b> before you reach the ball — your player lights up
+            white, and the ball flies the moment you touch it. <b>Sprint</b> is quick but tiring. At kick-off the
+            defending team must wait outside the centre circle.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th></th>
+                <th>Move</th>
+                <th>Kick</th>
+                <th>Sprint</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th>Online / practice</th>
+                <td>WASD or arrows</td>
+                <td>Space / X</td>
+                <td>Shift</td>
+              </tr>
+              <tr>
+                <th>Local player 1</th>
+                <td>WASD</td>
+                <td>Space</td>
+                <td>Left Shift</td>
+              </tr>
+              <tr>
+                <th>Local player 2</th>
+                <td>Arrows</td>
+                <td>Enter / Num 0</td>
+                <td>Right Shift</td>
+              </tr>
+              <tr>
+                <th>Gamepad</th>
+                <td>Stick / D-pad</td>
+                <td>A / X</td>
+                <td>B / RB / RT</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="hint">Phones and tablets get an on-screen joystick. <b>P</b> pauses, <b>M</b> mutes.</p>
+        </details>
+      </div>
+    </section>
+
+    <!-- Connecting spinner -->
+    <section id="screen-connecting" class="screen" hidden>
+      <div class="card small-card">
+        <div class="spinner" aria-hidden="true"></div>
+        <p id="connecting-text">Connecting…</p>
+        <button id="btn-cancel-connect">Cancel</button>
+      </div>
+    </section>
+
+    <!-- Online lobby -->
+    <section id="screen-lobby" class="screen" hidden>
+      <div class="card lobby-card">
+        <header class="lobby-head">
+          <div>
+            <div class="label">Room code</div>
+            <div id="room-code" class="room-code">-----</div>
+          </div>
+          <div class="invite-actions">
+            <button id="btn-copy" class="primary">Copy invite link</button>
+            <button id="btn-share" hidden>Share…</button>
+          </div>
+        </header>
+        <input id="invite-link" class="invite-link" readonly aria-label="Invite link" />
+        <p id="lobby-hint" class="hint"></p>
+
+        <div class="teams">
+          <div class="team team-red">
+            <h3>Red</h3>
+            <ul id="list-red"></ul>
+            <div class="team-actions">
+              <button data-join="red">Join Red</button>
+              <button data-bot="red" class="host-only ghost">+ CPU</button>
+            </div>
+          </div>
+          <div class="team team-blue">
+            <h3>Blue</h3>
+            <ul id="list-blue"></ul>
+            <div class="team-actions">
+              <button data-join="blue">Join Blue</button>
+              <button data-bot="blue" class="host-only ghost">+ CPU</button>
+            </div>
+          </div>
+        </div>
+        <div class="spectators">
+          <span class="label">Watching:</span>
+          <span id="list-spec">nobody</span>
+          <button data-join="spec" class="ghost">Spectate</button>
+        </div>
+
+        <div class="row settings-row">
+          <label
+            >Length
+            <select id="lobby-time" class="setting-time"></select>
+          </label>
+          <label
+            >Win at
+            <select id="lobby-score" class="setting-score"></select>
+          </label>
+          <label
+            >CPU level
+            <select id="lobby-bot">
+              <option value="easy">Easy</option>
+              <option value="normal">Normal</option>
+              <option value="hard">Hard</option>
+            </select>
+          </label>
+        </div>
+
+        <footer class="lobby-foot">
+          <button id="btn-leave-lobby" class="ghost">Leave</button>
+          <span id="lobby-wait" class="hint">Waiting for the host to start…</span>
+          <button id="btn-start" class="primary host-only">Start match</button>
+        </footer>
+      </div>
+    </section>
+
+    <!-- In-game HUD and overlays -->
+    <section id="screen-game" class="screen" hidden>
+      <div id="hud">
+        <div class="hud-team hud-red">
+          <span class="hud-name" id="hud-red-name">Red</span>
+          <span class="hud-goals" id="hud-red">0</span>
+        </div>
+        <div class="hud-clock">
+          <span id="hud-time">0:00</span>
+          <small id="hud-sub"></small>
+        </div>
+        <div class="hud-team hud-blue">
+          <span class="hud-goals" id="hud-blue">0</span>
+          <span class="hud-name" id="hud-blue-name">Blue</span>
+        </div>
+      </div>
+      <div id="hud-tools">
+        <span id="hud-ping" hidden></span>
+        <button id="btn-mute" class="icon" title="Sound (M)" aria-label="Toggle sound">
+          <svg class="on" viewBox="0 0 24 24">
+            <path d="M4 9v6h4l5 4V5L8 9H4z" />
+            <path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" />
+          </svg>
+          <svg class="off" viewBox="0 0 24 24">
+            <path d="M4 9v6h4l5 4V5L8 9H4z" />
+            <path d="M17 9.5l5 5M22 9.5l-5 5" />
+          </svg>
+        </button>
+        <button id="btn-pause" class="icon" title="Pause (P)" aria-label="Pause">
+          <svg viewBox="0 0 24 24"><path d="M9 6v12M15 6v12" /></svg>
+        </button>
+        <button id="btn-fullscreen" class="icon" title="Full screen" aria-label="Full screen">
+          <svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></svg>
+        </button>
+        <button id="btn-exit" class="icon" title="Leave" aria-label="Leave">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+
+      <div id="banner" aria-live="polite">
+        <div class="banner-title"></div>
+        <div class="banner-sub"></div>
+      </div>
+
+      <div id="paused" hidden>
+        <div class="card small-card">
+          <h2>Paused</h2>
+          <p class="hint">Press <b>P</b> or the button to carry on.</p>
+          <button id="btn-resume" class="primary">Resume</button>
+        </div>
+      </div>
+
+      <div id="end-panel" hidden>
+        <div class="card end-card">
+          <div id="end-title" class="end-title">Full time</div>
+          <div class="end-score">
+            <span id="end-red" class="red">0</span><span class="dash">–</span><span id="end-blue" class="blue">0</span>
+          </div>
+          <ul id="end-goals"></ul>
+          <div class="row end-actions">
+            <button id="btn-rematch" class="primary">Rematch</button>
+            <button id="btn-to-lobby">Back to lobby</button>
+            <span id="end-wait" class="hint">Waiting for the host…</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="touch" hidden>
+        <div class="stick-zone"></div>
+        <div class="stick"><div class="knob"></div></div>
+        <button class="touch-btn sprint" data-touch="sprint">SPRINT</button>
+        <button class="touch-btn kick" data-touch="kick">KICK</button>
+      </div>
+
+      <div id="rotate-hint">↻ Turn your phone sideways to play</div>
+    </section>
+
+    <div id="toast" role="status" aria-live="polite"></div>
+
+    <noscript><p class="noscript">Kickabout needs JavaScript to run.</p></noscript>
+    <script src="vendor/peerjs.min.js"></script>
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>
