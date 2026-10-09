@@ -150,6 +150,10 @@
         </header>
         <input id="invite-link" class="invite-link" readonly aria-label="Invite link" />
         <p id="lobby-hint" class="hint"></p>
+        <p id="lobby-net" class="hint warn" hidden></p>
+        <p class="hint host-only">
+          Keep this page open and on screen while friends join — phones pause pages in the background.
+        </p>
 
         <div class="teams">
           <div class="team team-red">
@@ -264,7 +268,8 @@
           <div class="row end-actions">
             <button id="btn-rematch" class="primary">Rematch</button>
             <button id="btn-to-lobby">Back to lobby</button>
-            <span id="end-wait" class="hint">Waiting for the host…</span>
+            <span id="end-wait" class="hint">Waiting for the host to start a rematch…</span>
+            <button id="btn-leave-end" class="ghost">Leave room</button>
           </div>
         </div>
       </div>

@@ -165,6 +165,10 @@ h3 {
   color: var(--muted);
 }
 
+.hint.warn {
+  color: var(--accent);
+}
+
 .row {
   display: flex;
   flex-wrap: wrap;
@@ -630,6 +634,7 @@ body[data-role='host'] #lobby-wait {
 
 #hud-tools {
   position: absolute;
+  z-index: 5; /* stay clickable above the pause and full-time overlays */
   top: max(8px, env(safe-area-inset-top));
   right: max(8px, env(safe-area-inset-right));
   display: flex;
@@ -845,6 +850,11 @@ button.icon.confirm {
 .end-actions {
   justify-content: center;
   margin-top: 16px;
+}
+
+#end-wait {
+  flex-basis: 100%;
+  text-align: center;
 }
 
 /* Touch controls */

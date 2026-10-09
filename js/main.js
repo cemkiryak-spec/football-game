@@ -250,6 +250,13 @@ async function joinRoom(rawCode) {
     name: myName(),
     code,
     onUpdate: onRoomUpdate,
+    onStatus: (stage) => {
+      if (app.game !== room) return;
+      $('#connecting-text').textContent =
+        stage === 'relay'
+          ? "Your networks don't allow a direct connection — joining through the relay instead…"
+          : `Joining room ${code}…`;
+    },
     onClosed: (reason) => {
       if (app.game !== room) return;
       app.game = null;
@@ -311,9 +318,9 @@ function inviteLink(code) {
   const url = new URL(location.href);
   const params = new URLSearchParams();
   params.set('room', code);
-  // Keep self-hosted signalling options so the friend ends up on the same server.
+  // Keep connection overrides so the friend ends up on the same servers.
   const current = new URLSearchParams(location.search);
-  for (const k of ['signal', 'secure', 'ice']) if (current.has(k)) params.set(k, current.get(k));
+  for (const k of ['signal', 'secure', 'ice', 'relay', 'direct']) if (current.has(k)) params.set(k, current.get(k));
   url.search = params.toString();
   url.hash = '';
   return url.toString();
@@ -354,7 +361,7 @@ function renderLobby() {
       if (p.bot && isHost) {
         tail = el('button', { class: 'remove-bot ghost', textContent: '×', title: 'Remove CPU', 'data-remove': p.id });
       } else if (typeof p.ping === 'number') {
-        tail = el('span', { class: 'ping', textContent: `${p.ping} ms` });
+        tail = el('span', { class: 'ping', textContent: `${p.ping} ms${p.relay ? ' · relay' : ''}` });
       }
       return el('li', {}, el('span', { class: 'name', textContent: p.name }), ...badges, tail);
     });
@@ -385,6 +392,21 @@ function renderLobby() {
           : 'Each team needs at least one player.';
   } else {
     $('#lobby-hint').textContent = "You're in! Pick a team — the host starts the match.";
+  }
+
+  // Let the host know early if their network limits who can join.
+  const net = $('#lobby-net');
+  net.hidden = true;
+  if (isHost) {
+    if (!g.link.direct && g.link.relay.reachable) {
+      net.hidden = false;
+      net.textContent =
+        "Direct connections aren't available on your network, so friends will join through the relay (slightly more lag).";
+    } else if (g.link.direct && !g.link.relay.reachable) {
+      net.hidden = false;
+      net.textContent =
+        "The relay servers can't be reached from your network, so only friends whose networks allow direct connections can join.";
+    }
   }
 }
 
@@ -465,7 +487,7 @@ function updateHud(view, meta) {
   const ping = $('#hud-ping');
   if (g.role === 'guest' && typeof g.rtt === 'number') {
     ping.hidden = false;
-    setText('#hud-ping', `${Math.round(g.rtt)} ms`);
+    setText('#hud-ping', `${Math.round(g.rtt)} ms${g.mode === 'relay' ? ' · relay' : ''}`);
   } else {
     ping.hidden = true;
   }
@@ -503,6 +525,7 @@ function showEnd(view, meta) {
   $('#btn-to-lobby').hidden = !canRestart;
   $('#btn-to-lobby').textContent = g.role === 'host' ? 'Back to lobby' : 'Main menu';
   $('#end-wait').hidden = canRestart;
+  $('#btn-leave-end').hidden = canRestart;
   $('#end-panel').hidden = false;
 }
 
@@ -737,6 +760,7 @@ function init() {
     if (g.role === 'host') g.startMatch();
     else g.rematch();
   });
+  $('#btn-leave-end').addEventListener('click', exitGame);
   $('#btn-to-lobby').addEventListener('click', () => {
     const g = app.game;
     if (g && g.role === 'host') g.toLobby();

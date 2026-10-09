@@ -4,6 +4,9 @@
 // Messages (all JSON):
 //   guest → host  hello {name, v} · in {q, x, y, k, s, kc} · team {team} · pause · ping {ts, rtt}
 //   host → guest  welcome {id} · room {...} · s {m, s: snapshot} · pong {ts} · bye {reason}
+//
+// Guests are either connected directly (WebRTC) or through the relay; relayed
+// guests get snapshots at 30 Hz instead of 60 to go easy on the brokers.
 
 import { MAX_PER_TEAM } from '../engine/constants.js';
 import { createMatch, addPlayer, removePlayer, setPaused } from '../engine/match.js';
@@ -73,10 +76,13 @@ export class HostRoom {
       if (this.players.filter((p) => !p.bot).length >= MAX_PEOPLE) return this.refuse(conn, 'full');
       id = this.nextId++;
       const team = this.inMatch ? 'spec' : this.balancedTeam();
-      this.players.push({ id, name: cleanName(msg.name, `Player ${id}`), team, ping: null });
+      const relay = !!conn.relay;
+      this.players.push({ id, name: cleanName(msg.name, `Player ${id}`), team, ping: null, relay });
       this.peers.set(id, { conn, lastSeen: performance.now(), seq: -1, kc: 0, input: IDLE, tap: false });
       conn.send({ t: 'welcome', id, code: this.code });
       this.changed();
+      // A relayed guest only starts listening to room-wide messages once welcomed.
+      if (relay) conn.send({ t: 'room', ...this.roomState() });
     });
     const gone = () => {
       if (id !== null) this.drop(id);
@@ -139,6 +145,8 @@ export class HostRoom {
       this.pingDirty = false;
       this.changed();
     }
+    // Relayed messages can occasionally get lost; repeat the room state.
+    if (this.link.relay.guestCount) this.link.relay.broadcast({ t: 'room', ...this.roomState() });
   }
 
   drop(id) {
@@ -199,7 +207,8 @@ export class HostRoom {
     this.matchId++;
     this.inMatch = true;
     const matchId = this.matchId;
-    this.sim = new Sim(match, { onSnapshot: (s) => this.broadcast({ t: 's', m: matchId, s }) });
+    this.relayEvents = [];
+    this.sim = new Sim(match, { onSnapshot: (s) => this.sendSnapshot(matchId, s) });
     for (const p of this.players) {
       if (p.team === 'spec') continue;
       if (p.id === this.myId) this.sim.setController(p.id, () => this.localInput());
@@ -229,7 +238,13 @@ export class HostRoom {
   }
 
   broadcast(msg) {
+    this.sendDirect(msg);
+    this.link.relay.broadcast(msg);
+  }
+
+  sendDirect(msg) {
     for (const peer of this.peers.values()) {
+      if (peer.conn.relay) continue;
       try {
         if (peer.conn.open) peer.conn.send(msg);
       } catch {
@@ -238,11 +253,31 @@ export class HostRoom {
     }
   }
 
+  sendSnapshot(matchId, s) {
+    this.sendDirect({ t: 's', m: matchId, s });
+    if (!this.link.relay.guestCount) return;
+    // Relayed guests: every other tick, carrying the events of the skipped one.
+    if (s.ev) this.relayEvents.push(...s.ev);
+    if (s.k % 2 !== 0) return;
+    const events = this.relayEvents;
+    this.relayEvents = [];
+    const out = events.length ? { ...s, ev: events } : s;
+    this.link.relay.broadcast({ t: 's', m: matchId, s: out }, { droppable: !events.length });
+  }
+
   roomState() {
     return {
       rv: this.rv,
       code: this.code,
-      players: this.players.map(({ id, name, team, host, bot, ping }) => ({ id, name, team, host, bot, ping })),
+      players: this.players.map(({ id, name, team, host, bot, ping, relay }) => ({
+        id,
+        name,
+        team,
+        host,
+        bot,
+        ping,
+        relay,
+      })),
       settings: this.settings,
       inMatch: this.inMatch,
       matchId: this.matchId,
@@ -273,8 +308,9 @@ export class HostRoom {
 }
 
 export class GuestRoom {
-  constructor({ name, code, onUpdate, onClosed }) {
+  constructor({ name, code, onUpdate, onClosed, onStatus }) {
     this.role = 'guest';
+    this.onStatus = onStatus;
     this.name = cleanName(name);
     this.code = code;
     this.onUpdate = onUpdate;
@@ -300,6 +336,7 @@ export class GuestRoom {
     this.link = new GuestLink({
       onData: (msg) => this.onData(msg),
       onClose: () => this.close('The connection to the host was lost.'),
+      onStatus: this.onStatus,
     });
     const welcomed = new Promise((resolve, reject) => {
       this.welcomed = { resolve, reject };
@@ -382,6 +419,11 @@ export class GuestRoom {
 
   togglePause() {
     this.link.send({ t: 'pause' });
+  }
+
+  /** 'direct' or 'relay'. */
+  get mode() {
+    return this.link ? this.link.mode : null;
   }
 
   view() {

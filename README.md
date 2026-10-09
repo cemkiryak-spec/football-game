@@ -5,7 +5,7 @@ No accounts, no installs, no game server: one of you creates a room, sends the l
 
 ![Kickabout gameplay](docs/screenshot.jpg)
 
-- **Online multiplayer:** 1 v 1 up to 4 v 4, peer-to-peer over WebRTC. Share a link or a 5-letter room code.
+- **Online multiplayer:** 1 v 1 up to 4 v 4. Share a link or a 5-letter room code. Connects directly between browsers where it can, and through a relay where networks don't allow that.
 - **CPU players:** fill out the teams online (play together against the computer), or practise solo on Easy, Normal or Hard.
 - **Same keyboard:** two players on one computer.
 - **Phones and tablets:** on-screen joystick with kick and sprint buttons. Gamepads work too.
@@ -66,31 +66,33 @@ Any static file server works too (for example `python3 -m http.server`). Opening
 
 ## How online play works
 
-- Players connect **directly browser-to-browser** with WebRTC data channels, using [PeerJS](https://peerjs.com/).
-- The free public PeerJS server only does the initial "introduction" (matchmaking by room code). If a direct connection isn't possible (strict NATs), PeerJS's public TURN relay is used automatically.
-- The **host's browser is the referee**: it runs the physics at 60 ticks per second. Guests send their controls and draw the snapshots the host streams back, smoothed with a small interpolation buffer. Your round-trip time to the host is shown in the top-right corner.
-- For the smoothest game, let whoever has the better connection host.
+- Players first try to connect **directly browser-to-browser** with WebRTC data channels, using [PeerJS](https://peerjs.com/). The free public PeerJS server only does the introduction (matchmaking by room code).
+- Many home and mobile connections block direct links between browsers. This is common with carrier-grade NAT, where an internet provider shares one public IP address between many customers, and with strict firewalls. If a direct connection doesn't open within about 7 seconds, the game automatically switches to the **relay**: messages go through free public [MQTT](https://mqtt.org/) brokers over secure WebSockets, which get through almost any network. The host listens on both paths, so nobody has to choose.
+- The **host's browser is the referee**: it runs the physics at 60 ticks per second. Guests send their controls and draw the snapshots the host streams back, smoothed with a small interpolation buffer.
+- The top-right corner shows your round-trip time to the host, with "relay" added when you're relayed. A relayed connection works the same way but adds some lag, so if one friend's network allows direct connections, let them host.
+- Relayed traffic (player names, positions) passes through public brokers that anyone could listen to. It's fine for a kickabout, but don't put anything private in your name.
 
-### Using your own signalling server (optional)
+### Connection options
 
-If the public PeerJS server is ever down or blocked, run your own:
+Add these to the page URL. Invite links carry them over to your friends automatically.
 
-```sh
-npm install
-npm run signal          # PeerJS server on port 9000
-```
-
-Then open the game with `?signal=your-host:9000&secure=0` (or `?signal=your-host` if it's behind HTTPS on port 443). Invite links keep these options automatically.
+| Option                       | What it does                                                                         |
+| ---------------------------- | ------------------------------------------------------------------------------------ |
+| `?direct=off`                | Skip the direct attempt and always use the relay (joins faster on blocked networks). |
+| `?relay=off`                 | Never use the relay.                                                                 |
+| `?relay=wss://host/path,…`   | Use your own MQTT-over-WebSocket broker(s) for the relay.                            |
+| `?signal=host:port&secure=0` | Use your own PeerJS signalling server (`npm install && npm run signal`).             |
 
 ## Troubleshooting
 
-| Problem                                 | Try this                                                                                                                       |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| "Room wasn't found"                     | The code is case-insensitive but must match. The host must still have the game open.                                           |
-| "Couldn't reach the matchmaking server" | Check your internet connection. Some school or office networks block it, so try another network or your own signalling server. |
-| Connecting takes forever                | A VPN or strict firewall can block peer-to-peer connections. Try turning off the VPN, or switch who hosts.                     |
-| Laggy                                   | Let the player with the better connection host. Close big downloads or streams.                                                |
-| No sound                                | Click or press a key once. Browsers only allow sound after you interact with the page. Check that **M** hasn't muted it.       |
+| Problem                           | Try this                                                                                                                           |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| "Room wasn't found"               | The code is case-insensitive but must match. The host must still have the game open.                                               |
+| "Couldn't reach the host"         | The host must keep the game open **and on screen**: phones pause web pages in the background (for example while sharing the link). |
+| "Couldn't reach the game servers" | Check your internet connection. Some school or office networks block game traffic; try mobile data.                                |
+| Joining says it's using the relay | That's expected on some networks and works fine. Add `?direct=off` to skip the 7-second direct attempt.                            |
+| Laggy                             | Let the player whose ping doesn't say "relay" host. Close big downloads or streams.                                                |
+| No sound                          | Click or press a key once. Browsers only allow sound after you interact with the page. Check that **M** hasn't muted it.           |
 
 ## Development
 
@@ -104,7 +106,9 @@ js/engine/             pure game logic (also runs in Node)
 js/client/             browser-only code
   sim.js               fixed-timestep loop and the guest's jitter buffer
   online.js            room protocol (host and guest)
-  net.js               PeerJS connection plumbing
+  net.js               connections: direct WebRTC first, relay as fallback
+  relay.js             relay transport over public MQTT brokers
+  mqtt.js              tiny MQTT 3.1.1-over-WebSocket client
   render.js            canvas drawing and effects
   input.js             keyboard, gamepad and touch
   audio.js             WebAudio sound effects
@@ -115,9 +119,9 @@ vendor/peerjs.min.js   PeerJS 1.5.5 (MIT), vendored so the game has no build ste
 Tests:
 
 ```sh
-npm test            # engine unit tests (no install needed)
 npm install
-npm run test:e2e    # two real browsers play an online match via a local PeerJS server
+npm test            # engine and relay unit tests (with a local MQTT broker)
+npm run test:e2e    # real browsers play online matches: direct, direct blocked → relay, and no matchmaking server
 ```
 
 The end-to-end test uses Playwright's Chromium (`npx playwright install chromium` if it isn't installed yet).
